@@ -1,2 +1,5 @@
 build/
 site/
+
+/test/hessian_prerecorded_gradient_tape.jl
+*.ipynb

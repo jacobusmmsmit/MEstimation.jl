@@ -6,6 +6,7 @@ using FiniteDiff
 using ForwardDiff
 using LinearAlgebra
 using Distributions
+using ReverseDiff
 # using InvertedIndices
 
 import Base: show, print
@@ -29,6 +30,10 @@ export stderror
 export slice
 # export profile
 
+# const CACHE = Dict{DataType, Any}()
+# look at objective_functions.jl
+# take a test and try to rewrite the test using the new design (look for all the new things I will need to do)
+# remove most of the tests, keep only logreg using objectives 
 include("estimating_functions.jl")
 include("objective_functions.jl")
 include("fit.jl")
