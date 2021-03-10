@@ -181,3 +181,5 @@ function estimating_function_template(object::objective_function_template)
     end
     estimating_function_template(object.nobs, ef_contribution)
 end
+
+const GCACHE = Dict{DataType,Any}()

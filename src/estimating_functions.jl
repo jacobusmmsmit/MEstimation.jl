@@ -7,6 +7,7 @@
 Arguments
 ===
 + `nobs`: a function of `data` that computes the number of observations of the particular data type,
++ (NOT YET IMPLEMENTED) `observation`: a function of `data` and an indexing value `i` which extracts the `i`th observation from the data
 + `ef_contribution`: a function of the parameters `theta`, the `data` and the observation index `i` that returns a vector of length `length(theta)`.
 
 Result
@@ -15,6 +16,7 @@ An `estimating_function_template` object with fields `nobs` and `obj_contributio
 """
 struct estimating_function_template
     nobs::Function
+    # observation::Function
     ef_contribution::Function
 end
 
