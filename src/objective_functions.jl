@@ -7,7 +7,8 @@ A constructor of objects of [composite type](https://docs.julialang.org/en/v1/ma
 Arguments
 ===
 + `nobs`: a function of `data` that computes the number of observations of the particular data type,
-+ `obj_contribution`: a function of the parameters `theta`, the `data` and the observation index `i` that returns a `Float64`.
++ `observation`: a function of `data` and an indexing value `i` which extracts the `i`th observation from the data
++ `obj_contribution`: a function of the parameters `theta` observation (calculated from `data`, and index `i` using the `observation` above) that returns a `Float64`.
 
 Result
 ===
@@ -16,6 +17,7 @@ An `objective_function_template` object with fields `nobs` and `obj_contribution
 """
 struct objective_function_template
     nobs::Function
+    observation::Function
     obj_contribution::Function
 end
 
@@ -48,12 +50,13 @@ Details
 function objective_function(theta::Vector,
                             data::Any,
                             template::objective_function_template,
-                            br::Bool = false)
+                            br::Bool=false)
     p = length(theta)
     n_obs = template.nobs(data)
     objective = 0
     for i in 1:n_obs
-        objective += template.obj_contribution(theta, data, i)
+        obs_i = template.observation(data, i)
+        objective += template.obj_contribution(theta, obs_i)
     end
     if (br)
         objective + obj_quantities(theta, data, template, true)[1]
@@ -66,23 +69,33 @@ end
 function obj_quantities(theta::Vector,
                         data::Any,
                         template::objective_function_template,
-                        penalty::Bool = false)
-    objective_i = (pars, i) -> template.obj_contribution(pars, data, i)
-    results_i = (x, i) -> begin
-        out = DiffResults.HessianResult(x)
-        ForwardDiff.hessian!(out, pars -> objective_i(pars, i), x)
+                        penalty::Bool=false)
+    objective_i(pars, i) = template.obj_contribution(pars, template.observation(data, i))
+    
+    function objective_gradient(theta::Vector{T}, i::Int64) where {T <: Real}
+        f = pars -> objective_i(pars, i)
+        if !(haskey(GCACHE, T))
+            gtape = ReverseDiff.compile(ReverseDiff.GradientTape(f, theta))
+            GCACHE[T] = (gtape, zeros(T, length(theta)))
+        end
+        gtape, y = GCACHE[T]
+        return ReverseDiff.gradient!(y, gtape, theta)
     end
+    
+    function objective_hessian(pars, i::Int64)
+        ForwardDiff.jacobian(eta -> objective_gradient(eta, i), pars) 
+    end
+
     p = length(theta)
     n_obs = template.nobs(data)
     psi = zeros(p)
     emat = zeros(p, p)
     jmat = zeros(p, p)
     for i in 1:n_obs
-        cdiffres = results_i(theta, i)
-        cpsi = DiffResults.gradient(cdiffres)
+        cpsi = objective_gradient(theta, i)
         psi += cpsi
         emat += cpsi * cpsi'
-        jmat += - DiffResults.hessian(cdiffres)
+        jmat += objective_hessian(theta, i)
     end
     jmat_inv = try
         inv(jmat)
@@ -105,7 +118,7 @@ end
 function obj_quantities_old(theta::Vector,
                             data::Any,
                             template::objective_function_template,
-                            penalty::Bool = false)
+                            penalty::Bool=false)
     function gr_i(eta::Vector, i::Int)
         out = similar(eta)
         ForwardDiff.gradient!(out, beta -> template.obj_contribution(beta, data, i), eta)
