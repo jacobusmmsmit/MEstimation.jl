@@ -173,10 +173,16 @@ Result
 A [`estimating_function_template`](@ref) object.
 
 """
-function estimating_function_template(object::objective_function_template)
-    function ef_contribution(theta::Vector, data::Any, i::Int64)
-        out = similar(theta)
-        ForwardDiff.gradient!(out, b -> object.obj_contribution(b, data, i), theta)
+function estimating_function_template(obj_template::objective_function_template)
+    function ef_contribution(theta::Vector{T}, obs) where {T <: Real}
+        x = (theta, obs)
+        f = obj_template.obj_contribution
+        if !(haskey(EOCACHE, T))
+            tape = ReverseDiff.compile(ReverseDiff.GradientTape(f, x))
+            EOCACHE[T] = (tape, (zeros(T, length(theta)), zeros(T, length(obs))))
+        end
+        tape, y = EOCACHE[T]
+        return ReverseDiff.gradient!(y, tape, x)[1]
     end
-    estimating_function_template(object.nobs, object.observation, ef_contribution)
+    return estimating_function_template(obj_template.nobs, obj_template.observation, ef_contribution)
 end

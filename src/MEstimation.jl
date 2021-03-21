@@ -30,8 +30,9 @@ export stderror
 export slice
 # export profile
 
-const JCACHE = Dict{DataType, Any}()
-const GCACHE = Dict{DataType, Any}()
+const JCACHE = Dict{DataType,Any}()
+const GCACHE = Dict{DataType,Any}()
+const EOCACHE = Dict{DataType,Any}()
 # look at objective_functions.jl
 # take a test and try to rewrite the test using the new design (look for all the new things I will need to do)
 # remove most of the tests, keep only logreg using objectives 
