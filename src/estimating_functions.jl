@@ -7,7 +7,7 @@
 Arguments
 ===
 + `nobs`: a function of `data` that computes the number of observations of the particular data type,
-+ (NOT YET IMPLEMENTED) `observation`: a function of `data` and an indexing value `i` which extracts the `i`th observation from the data
++ `observation`: a function of `data` and an indexing value `i` which extracts the `i`th observation from the data
 + `ef_contribution`: a function of the parameters `theta`, the `data` and the observation index `i` that returns a vector of length `length(theta)`.
 
 Result
@@ -16,7 +16,7 @@ An `estimating_function_template` object with fields `nobs` and `obj_contributio
 """
 struct estimating_function_template
     nobs::Function
-    # observation::Function
+    observation::Function
     ef_contribution::Function
 end
 
@@ -49,13 +49,14 @@ Details
 function estimating_function(theta::Vector,
                              data::Any,
                              template::estimating_function_template,
-                             br::Bool = false,
-                             concentrate::Vector{Int64} = Vector{Int64}())
+                             br::Bool=false,
+                             concentrate::Vector{Int64}=Vector{Int64}())
     p = length(theta)
     n_obs = template.nobs(data)
     ef = zeros(p)
     for i in 1:n_obs
-        ef += template.ef_contribution(theta, data, i)
+        obs_i = template.observation(data, i)
+        ef += template.ef_contribution(theta, obs_i)
     end
     if (br)
         quants = ef_quantities(theta, data, template, br, concentrate)
@@ -89,9 +90,9 @@ An in-place function that stores the value of the estimating functions inferred 
 """
 function get_estimating_function(data::Any,
                                  template::estimating_function_template,
-                                 br::Bool = false,
-                                 concentrate::Vector{Int64} = Vector{Int64}(),
-                                 regularizer::Any = Vector{Int64}())
+                                 br::Bool=false,
+                                 concentrate::Vector{Int64}=Vector{Int64}(),
+                                 regularizer::Any=Vector{Int64}())
     ## regulizer here has different type and default than fit, because
     ## the dimension of theta cannot be inferred
     has_regularizer = typeof(regularizer) <: Function
@@ -99,7 +100,7 @@ function get_estimating_function(data::Any,
         if has_regularizer
             out = estimating_function(theta, data, template, br, concentrate) + regularizer(theta, data)
         else
-             out = estimating_function(theta, data, template, br, concentrate)
+            out = estimating_function(theta, data, template, br, concentrate)
         end
         for i in 1:length(out)
             F[i] = out[i]
@@ -110,13 +111,27 @@ end
 function ef_quantities(theta::Vector,
                        data::Any,
                        template::estimating_function_template,
-                       adjustment::Bool = false,
-                       concentrate::Vector{Int64} = Vector{Int64}())   
-    estfun_i = (pars, i) -> template.ef_contribution(pars, data, i)
-    function ja_i(eta::Vector, i::Int)
-        out = similar(eta, p, p)
-        ForwardDiff.jacobian!(out, pars -> estfun_i(pars, i), eta)
+                       adjustment::Bool=false,
+                       concentrate::Vector{Int64}=Vector{Int64}())
+    estfun = (pars, obs) -> template.ef_contribution(pars, obs)
+    
+    function ja_obs(eta::Vector{T}, obs) where {T <: Any}
+        x = (eta, obs)
+        f = (params, obs_i) -> estfun(params, obs_i)
+        if !(haskey(JCACHE, T))
+            jtape = ReverseDiff.compile(ReverseDiff.JacobianTape(f, x))
+            JCACHE[T] = (
+                jtape,
+                (
+                    zeros(T, (length(eta), length(eta))),
+                    zeros(T, (length(obs), length(eta)))
+                )
+            )
+        end
+        jtape, y = JCACHE[T]
+        return ReverseDiff.jacobian!(y, jtape, x)[1]
     end
+
     p = length(theta)
     n_obs = template.nobs(data)
     psi = zeros(p)
@@ -124,33 +139,31 @@ function ef_quantities(theta::Vector,
     jmat = zeros(p, p)
 
     if adjustment
-        function u(eta::Vector, i::Int)
-            out = similar(eta, p * p, p)
-            ForwardDiff.jacobian!(out, beta -> ja_i(beta, i), eta)
-        end
+        u = (theta, obs) -> ForwardDiff.jacobian(eta -> ja_obs(eta, obs), theta) 
         psi2 = Vector(undef, p)
         for j in 1:p
             psi2[j] = zeros(p, p)
         end
-        # psi2 = zeros(p, p, p)
         umat = zeros(p * p, p)
         for i in 1:n_obs
-            cpsi = estfun_i(theta, i)
+            obs = template.observation(data, i)
+            cpsi = estfun(theta, obs)
             psi += cpsi
             emat += cpsi * cpsi'
-            jaco = ja_i(theta, i)
+            jaco = ja_obs(theta, obs)
             jmat += -jaco
-            umat += u(theta, i)
+            umat += u(theta, obs)
             for j in 1:p
                 psi2[j] += jaco[j, :] * cpsi'
             end
         end
     else
         for i in 1:n_obs
-            cpsi = estfun_i(theta, i)
+            obs = template.observation(data, i)
+            cpsi = estfun(theta, obs)
             psi += cpsi
             emat += cpsi * cpsi'
-            jmat += - ja_i(theta, i)
+            jmat += - ja_obs(theta, obs)
         end
     end
       

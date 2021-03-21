@@ -70,32 +70,34 @@ function obj_quantities(theta::Vector,
                         data::Any,
                         template::objective_function_template,
                         penalty::Bool=false)
-    objective_i(pars, i) = template.obj_contribution(pars, template.observation(data, i))
     
-    function objective_gradient(theta::Vector{T}, i::Int64) where {T <: Real}
-        f = pars -> objective_i(pars, i)
+    objective_i(pars, obs) = template.obj_contribution(pars, obs)
+    
+    function objective_gradient(theta::Vector{T}, obs) where {T <: Real}
+        x = (theta, obs)
+        f = (x0, x1) -> objective_i(x0, x1)
         if !(haskey(GCACHE, T))
-            gtape = ReverseDiff.compile(ReverseDiff.GradientTape(f, theta))
-            GCACHE[T] = (gtape, zeros(T, length(theta)))
+            tape = ReverseDiff.compile(ReverseDiff.GradientTape(f, x))
+            GCACHE[T] = (tape, (zeros(T, length(theta)), zeros(T, length(obs))))
         end
-        gtape, y = GCACHE[T]
-        return ReverseDiff.gradient!(y, gtape, theta)
+        tape, y = GCACHE[T]
+        return ReverseDiff.gradient!(y, tape, x)[1]
     end
     
-    function objective_hessian(pars, i::Int64)
-        ForwardDiff.jacobian(eta -> objective_gradient(eta, i), pars) 
-    end
-
+    function objective_hessian(pars, obs)
+        ForwardDiff.jacobian(eta -> objective_gradient(eta, obs), pars) 
+    end    
     p = length(theta)
     n_obs = template.nobs(data)
     psi = zeros(p)
     emat = zeros(p, p)
     jmat = zeros(p, p)
     for i in 1:n_obs
-        cpsi = objective_gradient(theta, i)
+        obs_i = template.observation(data, i)
+        cpsi = objective_gradient(theta, obs_i)
         psi += cpsi
         emat += cpsi * cpsi'
-        jmat += objective_hessian(theta, i)
+        jmat += objective_hessian(theta, obs_i)
     end
     jmat_inv = try
         inv(jmat)
@@ -105,9 +107,6 @@ function obj_quantities(theta::Vector,
     vcov = jmat_inv * (emat * jmat_inv)
     if (penalty)        
         br_penalty = - tr(jmat_inv * emat) / 2
-        # br_penalty = n_obs * log(det(Matrix{Float64}(I * n_obs, p, p) -
-        #                              jmat_inv * emat)) / 2
-        # br_penalty = + log(det(sum(njmats))) / 2 - log(det(emat)) / 2
         [br_penalty, jmat_inv, emat, psi]
     else
         [vcov, jmat_inv, emat, psi]
@@ -179,7 +178,5 @@ function estimating_function_template(object::objective_function_template)
         out = similar(theta)
         ForwardDiff.gradient!(out, b -> object.obj_contribution(b, data, i), theta)
     end
-    estimating_function_template(object.nobs, ef_contribution)
+    estimating_function_template(object.nobs, object.observation, ef_contribution)
 end
-
-const GCACHE = Dict{DataType,Any}()
