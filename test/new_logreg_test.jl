@@ -48,7 +48,7 @@ using MEstimation
     e1_ml = MEstimation.fit(logistic_ef_template, my_data, true_betas, estimation_method="M")
     e2_ml = MEstimation.fit(logistic_ef2_template, my_data, true_betas, estimation_method="M")
 
-    o1_br = MEstimation.fit(logistic_obj_template, my_data, true_betas, estimation_method="RBM")
+    o1_br = MEstimation.fit(logistic_obj_template, my_data, true_betas, estimation_method="RBM") # broken
     e1_br = MEstimation.fit(logistic_ef_template, my_data, true_betas, estimation_method="RBM")
     e2_br = MEstimation.fit(logistic_ef2_template, my_data, true_betas, estimation_method="RBM")
 
